@@ -1,62 +1,78 @@
-import { useState, useEffect, useRef } from 'react'
-import { mockChats } from '../mocks/data'
-import ReactLoading from 'react-loading'
+import { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 
 function Chat() {
-    const [messages, setMessages] = useState([])
-    const [newMessage, setNewMessage] = useState('')
-    const [loading, setLoading] = useState(true)
-    const messagesEndRef = useRef(null)
+    const [messages, setMessages] = useState(() => {
+        // localStorage에서 저장된 메시지를 불러옴
+        const savedMessages = localStorage.getItem('messages');
+        return savedMessages ? JSON.parse(savedMessages) : [];
+    });
+    const [newMessage, setNewMessage] = useState('');
+    const [loading, setLoading] = useState(false);
+    const messagesEndRef = useRef(null);
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-            setMessages(mockChats)
-            setLoading(false)
-        }, 1000)
+        // 메시지 목록 변경 시 localStorage에 저장
+        localStorage.setItem('messages', JSON.stringify(messages));
+    }, [messages]);
 
-        return () => clearTimeout(timer)
-    }, [])
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!newMessage.trim()) return;
 
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, [messages])
-
-    const handleSubmit = (e) => {
-        e.preventDefault()
-        if (!newMessage.trim()) return
-
-        const newChat = {
+        const userMessage = {
             id: `msg${messages.length + 1}`,
             content: newMessage,
             createdAt: new Date().toISOString(),
             isMyMessage: true,
+        };
+
+        setMessages((prevMessages) => [...prevMessages, userMessage]);
+        setNewMessage('');
+        setLoading(true);
+
+        try {
+            const response = await axios.post('http://localhost:8070/api/v1/chat/rooms/ai', {
+                content: userMessage.content,
+            });
+
+            const gptResponse = {
+                id: `msg${messages.length + 2}`,
+                content: response.data.response,
+                createdAt: new Date().toISOString(),
+                isMyMessage: false,
+            };
+
+            setMessages((prevMessages) => [...prevMessages, gptResponse]);
+        } catch (error) {
+            console.error('Error communicating with GPT:', error);
+            const errorMessage = {
+                id: `msg${messages.length + 2}`,
+                content: 'GPT와의 통신에 실패했습니다. 다시 시도해주세요.',
+                createdAt: new Date().toISOString(),
+                isMyMessage: false,
+            };
+
+            setMessages((prevMessages) => [...prevMessages, errorMessage]);
+        } finally {
+            setLoading(false);
         }
+    };
 
-        setMessages([...messages, newChat])
-        setNewMessage('')
-    }
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
 
-    if (loading) {
-        return (
-            <div className="flex justify-center items-center min-h-screen">
-                <div className="text-center">
-                    <ReactLoading type="spin" color="#4F46E5" height={50} width={50} className="mx-auto mb-4" />
-                    <p className="text-gray-600">로딩중...</p>
-                </div>
-            </div>
-        )
-    }
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
 
     return (
         <div className="container mx-auto px-4 py-8 max-w-3xl">
             <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-                {/* 채팅 헤더 */}
                 <div className="bg-indigo-600 text-white p-4">
-                    <h1 className="text-xl font-bold">DATA BLOCKS 채팅방</h1>
-                    <p className="text-sm opacity-75">Backend Developer들과의 대화</p>
+                    <h1 className="text-xl font-bold">AI와의 대화</h1>
                 </div>
-
-                {/* 메시지 목록 */}
                 <div className="h-[600px] overflow-y-auto p-4 bg-gray-50">
                     <div className="space-y-4">
                         {messages.map((message) => (
@@ -86,8 +102,6 @@ function Chat() {
                         <div ref={messagesEndRef} />
                     </div>
                 </div>
-
-                {/* 메시지 입력 */}
                 <form onSubmit={handleSubmit} className="p-4 bg-white border-t">
                     <div className="flex space-x-2">
                         <input
@@ -96,18 +110,20 @@ function Chat() {
                             onChange={(e) => setNewMessage(e.target.value)}
                             placeholder="메시지를 입력하세요..."
                             className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            disabled={loading}
                         />
                         <button
                             type="submit"
                             className="px-6 py-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            disabled={loading}
                         >
-                            전송
+                            {loading ? '응답 대기 중...' : '전송'}
                         </button>
                     </div>
                 </form>
             </div>
         </div>
-    )
+    );
 }
 
-export default Chat
+export default Chat;
